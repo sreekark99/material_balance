@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Merged Charts</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.css"
+      integrity="sha512-MKxcSu/LDtbIYHBNAWUQwfB3iVoG9xeMCm32QV5hZ/9lFaQZJVaXfz9aFa0IZExWzCpm7OWvp9zq9gVip/nLMg=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    />
+    <style>
+      html,
+      body {
+        margin: 0 5%;
+        padding: 0;
+        height: 100%;
+      }
+
+      button#toggleButton {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+      }
+
+      div.graph-container {
+        margin-top: 20px;
+      }
+
+      canvas {
+        width: 100%;
+        height: auto;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="container">
+      <h1 class="display-6 text-center">Material Balance</h1>
+      <button id="toggleButton" class="btn btn-primary">
+        Pressure Matching
+      </button>
+    </div>
+
+    <div id="firstGraphContainer" class="graph-container">
+      <canvas id="firstChart"></canvas>
+      <div id="firstSlider"></div>
+    </div>
+
+    <div
+      id="secondGraphContainer"
+      class="graph-container"
+      style="display: none"
+    >
+      <canvas id="secondChart"></canvas>
+      <div id="secondSlider"></div>
+    </div>
+
+    <p id="loadingMessage" class="text-center mt-3">Loading...</p>
+
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.17.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.8.0/dist/chart.min.js"></script>
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.1/nouislider.js"
+      integrity="sha512-vugBf2gnOT0vro1tb33YIFxcpmTVxvKLX9XV1/2xzkA6Ydlc5zuGIhX4RQ86WVpv/rqwEfcL9h8LrgpyBoeTOw=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    ></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+      function createFirstGraph() {
+        let myChart;
+        let labels;
+        let datasets;
+        let slider;
+
+        const excelFilePath = 'energyplot.xlsx';
+
+        function formatYearFromDate(value) {
+          const date = new Date(value);
+          if (isNaN(date.getTime())) {
+            return value;
+          }
+          return date.getFullYear().toString();
+        }
+
+        function formatDate(dateString) {
+          const dateObject = new Date(dateString);
+          const options = { year: 'numeric', month: '2-digit', day: '2-digit' };
+          return dateObject.toLocaleDateString('en-US', options);
+        }
+
+        function updateAreaChart() {
+          const reader = new FileReader();
+
+          reader.onload = function (e) {
+            try {
+              const data = new Uint8Array(e.target.result);
+              const workbook = XLSX.read(data, { type: 'array' });
+
+              const sheetName = workbook.SheetNames[1];
+              const sheet = workbook.Sheets[sheetName];
+              const excelData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+              const headers = excelData[0].slice(1);
+
+              const jsonData = XLSX.utils
+                .sheet_to_json(sheet, {
+                  header: 1,
+                  range: 1,
+                  dateNF: 'yyyy-mm-dd',
+                  raw: false,
+                })
+                .map((row) => {
+                  const formattedRow = {};
+                  headers.forEach((header, index) => {
+                    formattedRow[`Value${index + 1}`] =
+                      index === 0 ? formatDate(row[index]) : row[index];
+                  });
+                  return formattedRow;
+                });
+
+              labels = jsonData.map((row) => row.Value1.slice(-4));
+
+              const minValue = Math.min(...labels);
+              const maxValue = Math.max(...labels);
+
+              createSliders(minValue, maxValue);
+
+              datasets = headers.map((header, index) => {
+                const color = `rgba(${Math.random() * 255},${
+                  Math.random() * 255
+                },${Math.random() * 255},1)`;
+
+                return {
+                  label: header,
+                  data: excelData.slice(1).map((row) => row[index + 1]),
+                  backgroundColor: color,
+                  borderColor: color,
+                  pointBackgroundColor: color,
+                  borderWidth: 0,
+                  fill: true,
+                };
+              });
+
+              const chartData = {
+                labels: labels,
+                datasets: datasets,
+              };
+
+              if (myChart) {
+                myChart.destroy();
+              }
+
+              const ctx = document
+                .getElementById('firstChart')
+                .getContext('2d');
+              myChart = new Chart(ctx, {
+                type: 'line',
+                data: chartData,
+                options: {
+                  responsive: true,
+                  plugins: {
+                    legend: {
+                      display: true,
+                      position: 'top',
+                    },
+                    title: {
+                      display: true,
+                      text: 'Energy Plot',
+                      font: {
+                        size: 16,
+                      },
+                    },
+                  },
+                  scales: {
+                    x: {
+                      title: {
+                        display: true,
+                        text: 'Date',
+                      },
+                    },
+                    y: {
+                      title: {
+                        display: true,
+                        text: 'Index',
+                      },
+                    },
+                  },
+                },
+              });
+
+              document.getElementById('loadingMessage').style.display = 'none';
+            } catch (error) {
+              console.error('Error processing Excel data:', error);
+              alert(
+                'Error processing Excel data. Please check the console for details.'
+              );
+            }
+          };
+
+          fetch(excelFilePath)
+            .then((response) => response.blob())
+            .then((blob) => reader.readAsArrayBuffer(blob))
+            .catch((error) => {
+              console.error('Error loading Excel file:', error);
+              alert(
+                'Error loading Excel file. Please check the console for details.'
+              );
+            });
+        }
+
+        function createSliders(minValue, maxValue) {
+          const sliderContainer = document.getElementById('firstSlider');
+          slider = document.createElement('div');
+          slider.id = 'slider';
+          sliderContainer.appendChild(slider);
+
+          noUiSlider.create(slider, {
+            start: [minValue, maxValue],
+            connect: true,
+            range: {
+              min: minValue,
+              max: maxValue,
+            },
+            pips: {
+              mode: 'values',
+              values: getSliderPipValues(minValue, maxValue),
+              density: calculatePipsDensity(minValue, maxValue),
+              format: {
+                to: function (value) {
+                  return value;
+                },
+              },
+            },
+          });
+
+          slider.noUiSlider.on('update', handleSliderChange);
+        }
+
+        function handleSliderChange() {
+          if (!datasets || !labels) {
+            return;
+          }
+
+          const minYear = parseInt(slider.noUiSlider.get()[0]);
+          const maxYear = parseInt(slider.noUiSlider.get()[1]);
+
+          const filteredLabels = labels.slice().filter((label) => {
+            const year = parseInt(label);
+            return year >= minYear && year <= maxYear;
+          });
+
+          const filteredDatasets = datasets.map((dataset) => {
+            return {
+              ...dataset,
+              data: dataset.data.slice().filter((value, index) => {
+                const year = parseInt(labels[index]);
+                return year >= minYear && year <= maxYear;
+              }),
+            };
+          });
+
+          myChart.data.labels = filteredLabels;
+          myChart.data.datasets = filteredDatasets;
+          myChart.update();
+
+          updateSliderValueDisplays();
+        }
+
+        function updateSliderValueDisplays() {
+          sliderContainer.innerHTML = '';
+          sliderContainer.appendChild(slider);
+          sliderContainer.appendChild(sliderMinValueDisplay);
+          sliderContainer.appendChild(sliderMaxValueDisplay);
+        }
+
+        function getSliderPipValues(min, max) {
+          return Array.from({ length: max - min + 1 }, (_, i) => min + i);
+        }
+
+        function calculatePipsDensity(min, max) {
+          const range = max - min;
+          const pipCount = range;
+          return range > 0 ? Math.ceil(range / pipCount) : 1;
+        }
+
+        updateAreaChart();
+      }
+
+      function createSecondGraph() {
+        let myChart;
+        let datasets;
+        let slider;
+        let labels;
+
+        const excelFilePath = 'pressureplot.xlsx';
+
+        const datasetLabels = [
+          'Actual Pressure (ksc)',
+          'Calculated Pressure (ksc)',
+        ];
+
+        function formatYearFromDate(value) {
+          const date = new Date(value);
+          if (isNaN(date.getTime())) {
+            return value;
+          }
+          return date.getFullYear().toString();
+        }
+
+        function formatDate(dateString) {
+          const dateObject = new Date(dateString);
+          const options = { year: 'numeric', month: '2-digit', day: '2-digit' };
+          return dateObject.toLocaleDateString('en-US', options);
+        }
+
+        function applyMathOperation(data, operation) {
+          return data.map((value) => operation(value));
+        }
+
+        function updateLineChart() {
+          const reader = new FileReader();
+
+          reader.onload = function (e) {
+            try {
+              const data = new Uint8Array(e.target.result);
+              const workbook = XLSX.read(data, { type: 'array' });
+
+              const sheetName = workbook.SheetNames[0];
+              const sheet = workbook.Sheets[sheetName];
+              const excelData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+              const headers = excelData[0].slice(1);
+
+              const jsonData = XLSX.utils
+                .sheet_to_json(sheet, {
+                  header: 1,
+                  range: 1,
+                  dateNF: 'yyyy-mm-dd',
+                  raw: false,
+                })
+                .map((row) => {
+                  const formattedRow = {};
+                  headers.forEach((header, index) => {
+                    formattedRow[`Value${index + 1}`] =
+                      index === 0 ? formatDate(row[index]) : row[index];
+                  });
+                  return formattedRow;
+                });
+
+              labels = jsonData.map((row) => row.Value1.slice(-4));
+              console.log(jsonData);
+
+              datasets = [0, 6].map((index) => {
+                const originalData = excelData
+                  .slice(1)
+                  .map((row) => row[index + 1]);
+
+                const multipliedData = applyMathOperation(
+                  originalData,
+                  (value) => value * 0.070307
+                );
+
+                const randomColor = `rgba(${Math.random() * 255},${
+                  Math.random() * 255
+                },${Math.random() * 255},1)`;
+
+                return {
+                  label: datasetLabels[index],
+                  data: multipliedData,
+                  backgroundColor: randomColor,
+                  borderColor: randomColor,
+                  borderWidth: 2,
+                  fill: false,
+                  pointStyle: index === 0 ? 'crossRot' : 'circle',
+                  pointRadius: index === 0 ? 10 : 3,
+                };
+              });
+
+              const chartData = {
+                labels: labels,
+                datasets: datasets,
+              };
+
+              if (myChart) {
+                myChart.destroy();
+              }
+
+              const ctx = document
+                .getElementById('secondChart')
+                .getContext('2d');
+              myChart = new Chart(ctx, {
+                type: 'line',
+                data: chartData,
+                options: {
+                  responsive: true,
+                  plugins: {
+                    legend: {
+                      display: true,
+                      position: 'top',
+                      labels: {
+                        generateLabels: function (chart) {
+                          return datasetLabels.map((label, index) => {
+                            return {
+                              text: label,
+                              fillStyle: datasets[index].backgroundColor,
+                              strokeStyle: datasets[index].borderColor,
+                              lineWidth: datasets[index].borderWidth,
+                              hidden: false,
+                              index: index,
+                            };
+                          });
+                        },
+                      },
+                    },
+                    title: {
+                      display: true,
+                      text: 'Pressure Matching',
+                      font: {
+                        size: 16,
+                      },
+                    },
+                  },
+                  scales: {
+                    x: {
+                      title: {
+                        display: true,
+                        text: 'Date',
+                      },
+                    },
+                    y: {
+                      title: {
+                        display: true,
+                        text: 'SBHP (ksc)',
+                      },
+                    },
+                  },
+                },
+              });
+
+              createSliders();
+              document.getElementById('loadingMessage').style.display = 'none';
+            } catch (error) {
+              console.error('Error processing Excel data:', error);
+              alert(
+                'Error processing Excel data. Please check the console for details.'
+              );
+            }
+          };
+
+          fetch(excelFilePath)
+            .then((response) => response.blob())
+            .then((blob) => reader.readAsArrayBuffer(blob))
+            .catch((error) => {
+              console.error('Error loading Excel file:', error);
+              alert(
+                'Error loading Excel file. Please check the console for details.'
+              );
+            });
+        }
+
+        function createSliders() {
+          const minValue = Math.min(...labels);
+          const maxValue = Math.max(...labels);
+
+          slider = document.getElementById('secondSlider');
+          console.log(minValue);
+          console.log(maxValue);
+          noUiSlider.create(slider, {
+            start: [minValue, maxValue],
+            connect: true,
+            range: {
+              min: minValue,
+              max: maxValue,
+            },
+            pips: {
+              mode: 'values',
+              values: getSliderPipValues(minValue, maxValue),
+              density: calculatePipsDensity(minValue, maxValue),
+              format: {
+                to: function (value) {
+                  return value;
+                },
+              },
+            },
+          });
+
+          slider.noUiSlider.on('update', handleSliderChange);
+
+          updateSliderValueDisplays();
+        }
+
+        function getSliderPipValues(min, max) {
+          return Array.from({ length: max - min + 1 }, (_, i) => min + i);
+        }
+
+        function calculatePipsDensity(min, max) {
+          const range = max - min;
+          const pipCount = range;
+          return range > 0 ? Math.ceil(range / pipCount) : 1;
+        }
+
+        function handleSliderChange(values, handle) {
+          const minYear = parseInt(values[0]);
+          const maxYear = parseInt(values[1]);
+
+          const filteredLabels = labels.filter((label) => {
+            const year = parseInt(label);
+            return year >= minYear && year <= maxYear;
+          });
+
+          const filteredDatasets = datasets.map((dataset) => {
+            return {
+              ...dataset,
+              data: dataset.data.slice().filter((value, index) => {
+                const year = parseInt(labels[index]);
+                return year >= minYear && year <= maxYear;
+              }),
+            };
+          });
+
+          myChart.data.labels = filteredLabels;
+          myChart.data.datasets = filteredDatasets;
+
+          myChart.update();
+
+          updateSliderValueDisplays();
+        }
+
+        function updateSliderValueDisplays() {
+          const sliderMinValueDisplay = document.createElement('span');
+          const sliderMaxValueDisplay = document.createElement('span');
+
+          const sliderContainer = document.getElementById('slider-container');
+
+          if (sliderContainer) {
+            sliderContainer.appendChild(slider);
+            sliderContainer.appendChild(sliderMinValueDisplay);
+            sliderContainer.appendChild(sliderMaxValueDisplay);
+
+            function updateSliderValues() {
+              const values = slider.noUiSlider.get();
+              sliderMinValueDisplay.textContent = `Min: ${values[0]}`;
+              sliderMaxValueDisplay.textContent = `Max: ${values[1]}`;
+            }
+
+            updateSliderValues();
+
+            slider.noUiSlider.on('update', updateSliderValues);
+          }
+        }
+
+        updateSliderValueDisplays();
+
+        updateLineChart();
+      }
+
+      function toggleGraphs() {
+        const firstGraphContainer = document.getElementById(
+          'firstGraphContainer'
+        );
+        const secondGraphContainer = document.getElementById(
+          'secondGraphContainer'
+        );
+        const toggleButton = document.getElementById('toggleButton');
+
+        if (firstGraphContainer.style.display === 'none') {
+          firstGraphContainer.style.display = 'block';
+          secondGraphContainer.style.display = 'none';
+
+          toggleButton.textContent = 'Pressure Matching';
+        } else {
+          firstGraphContainer.style.display = 'none';
+          secondGraphContainer.style.display = 'block';
+
+          toggleButton.textContent = 'Energy Plot';
+        }
+      }
+
+      document
+        .getElementById('toggleButton')
+        .addEventListener('click', toggleGraphs);
+
+      createFirstGraph();
+      createSecondGraph();
+
+      window.addEventListener('resize', function () {
+        const { newPipCount, newLabelCount } =
+          calculateNewPipCount(containerWidth);
+
+        slider.noUiSlider.updateOptions({
+          range: {
+            min: 0,
+            max: 100,
+          },
+          pips: {
+            mode: 'values',
+            values: getSliderPipValues(0, 100, newPipCount),
+            density: calculatePipsDensity(0, 100, newPipCount),
+            format: {
+              to: function (value) {
+                return value + '%';
+              },
+            },
+            filter: function (value) {
+              return value % Math.ceil(newPipCount / newLabelCount) === 0;
+            },
+          },
+        });
+      });
+
+      function calculateNewPipCount(containerWidth) {
+        const minFactor = 5;
+        const maxFactor = 20;
+
+        const factorRange = maxFactor - minFactor;
+        const normalizedContainerWidth = Math.min(
+          Math.max(containerWidth, minFactor),
+          maxFactor
+        );
+        const normalizedFactor =
+          (normalizedContainerWidth - minFactor) / factorRange;
+
+        const newPipCount = Math.ceil(normalizedFactor * 100);
+        const newLabelCount = Math.min(Math.ceil(normalizedFactor * 10), 10);
+
+        return { newPipCount, newLabelCount };
+      }
+    </script>
+  </body>
+</html>
